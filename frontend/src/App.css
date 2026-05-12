@@ -1,0 +1,114 @@
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  background: #101820;
+  font-family: inherit;
+}
+
+.leaflet-control-attribution,
+.leaflet-control-zoom a {
+  background: rgba(8, 16, 23, 0.88) !important;
+  color: #cbd5e1 !important;
+  border-color: rgba(148, 163, 184, 0.2) !important;
+  z-index: 400 !important;
+}
+
+.leaflet-control-zoom {
+  border: 1px solid rgba(148, 163, 184, 0.2) !important;
+  border-radius: 6px !important;
+  background: rgba(8, 16, 23, 0.88) !important;
+}
+
+.road-marker {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: #06110e;
+  border: 3px solid rgba(255, 255, 255, 0.78);
+  box-shadow: 0 0 0 8px rgba(255, 255, 255, 0.08), 0 18px 32px rgba(0, 0, 0, 0.38);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.marker-crash {
+  background: #fb7185;
+}
+
+.marker-pothole {
+  background: #fb923c;
+}
+
+.marker-speed-breaker {
+  background: #fde047;
+}
+
+.route-endpoint {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: #020617;
+  border: 3px solid rgba(255, 255, 255, 0.82);
+  box-shadow: 0 0 0 8px rgba(45, 212, 191, 0.12), 0 18px 32px rgba(0, 0, 0, 0.38);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.route-endpoint-source {
+  background: #2dd4bf;
+}
+
+.route-endpoint-destination {
+  background: #fb7185;
+}
+
+.leaflet-control-attribution {
+  font-size: 11px;
+  padding: 4px 6px !important;
+  line-height: 1.4;
+}
+
+.leaflet-control-attribution a {
+  color: #cbd5e1 !important;
+}
+
+.leaflet-routing-container {
+  display: none;
+}
+
+.glass-panel {
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.82), rgba(15, 23, 42, 0.64));
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.32);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+}
+
+.thin-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.38) transparent;
+}
+
+.thin-scrollbar::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.thin-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.thin-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.38);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.thin-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.6);
+  background-clip: content-box;
+}

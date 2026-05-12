@@ -1,0 +1,84 @@
+from fastapi import APIRouter, Depends, HTTPException, Query, File, UploadFile
+from typing import List, Optional
+from schemas.event import EventCreate, EventResponse
+from services.supabase_service import SupabaseService, get_supabase_service
+import uuid
+
+router = APIRouter(prefix="/events", tags=["Events"])
+
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
+@router.post("/", response_model=EventResponse)
+async def create_event(
+    event: EventCreate, 
+    service: SupabaseService = Depends(get_supabase_service)
+):
+    try:
+        # Convert Pydantic model to dict for Supabase
+        event_dict = event.model_dump()
+        event_dict["timestamp"] = event.timestamp.isoformat()
+        
+        inserted_data = service.insert_event(event_dict)
+        
+        if not inserted_data:
+            raise HTTPException(status_code=500, detail="Failed to insert event into database")
+        
+        # Add custom logic
+        response_data = EventResponse(**inserted_data)
+        if event.event_type == "crash":
+            response_data.priority = "high"
+        
+        return response_data
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/{event_id}/upload-image", response_model=EventResponse)
+async def upload_event_image(
+    event_id: str,
+    file: UploadFile = File(...),
+    service: SupabaseService = Depends(get_supabase_service)
+):
+    # Validate file type
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image")
+
+    # Validate file size
+    file_content = await file.read()
+    if len(file_content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="File size exceeds 10MB limit")
+
+    try:
+        # Generate random filename
+        file_extension = file.filename.split(".")[-1]
+        file_name = f"{uuid.uuid4()}.{file_extension}"
+
+        # Upload to Supabase Storage
+        public_url = service.upload_image(file_content, file_name)
+
+        # Update event record in database
+        updated_event = service.update_event_image(event_id, public_url)
+
+        if not updated_event:
+            raise HTTPException(status_code=404, detail="Event not found")
+
+        # Create response
+        response_data = EventResponse(**updated_event)
+        if updated_event.get("event_type") == "crash":
+            response_data.priority = "high"
+
+        return response_data
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/", response_model=List[EventResponse])
+async def get_events(
+    event_type: Optional[str] = Query(None, description="Filter by event type"),
+    service: SupabaseService = Depends(get_supabase_service)
+):
+    try:
+        events = service.get_events(event_type)
+        return events
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
