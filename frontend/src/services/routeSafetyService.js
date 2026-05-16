@@ -10,7 +10,7 @@ const severityWeights = {
   severe: 22,
 }
 
-export function resolveLocation(query) {
+export function resolveLocationSync(query) {
   const normalizedQuery = query.trim().toLowerCase()
 
   const coordinateMatch = normalizedQuery.match(/^(-?\d+(\.\d+)?),\s*(-?\d+(\.\d+)?)$/)
@@ -24,17 +24,89 @@ export function resolveLocation(query) {
   return mockLocations.find((location) => location.name.toLowerCase().includes(normalizedQuery))
 }
 
-export function buildSaferWaypoint(source, destination) {
-  const midPoint = [
-    (source[0] + destination[0]) / 2,
-    (source[1] + destination[1]) / 2,
-  ]
+export async function resolveLocation(query) {
+  const syncResult = resolveLocationSync(query)
+  if (syncResult) return syncResult
 
-  return saferRouteBiasPoints.reduce((nearest, point) => {
-    const nearestDistance = getDistanceMeters(midPoint, nearest)
-    const pointDistance = getDistanceMeters(midPoint, point)
-    return pointDistance < nearestDistance ? point : nearest
-  }, saferRouteBiasPoints[0])
+  const fetchNominatim = async (searchQuery) => {
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchQuery)}&format=json&limit=1`
+      const response = await fetch(url)
+      const data = await response.json()
+      if (data && data.length > 0) {
+        return {
+          name: data[0].display_name,
+          coordinates: [Number(data[0].lat), Number(data[0].lon)]
+        }
+      }
+    } catch (error) {
+      console.error("Geocoding failed for", searchQuery, error)
+    }
+    return null
+  }
+
+  // 1. Try full query
+  let result = await fetchNominatim(query)
+  if (result) return result
+
+  // 2. Fallback: progressively simplify by dropping the first comma-separated part
+  if (query.includes(',')) {
+    let parts = query.split(',').map((p) => p.trim())
+    while (parts.length > 1) {
+      parts.shift() // Remove the most specific part (e.g. "Unnamed Road")
+      const simplifiedQuery = parts.join(', ')
+      result = await fetchNominatim(simplifiedQuery)
+      if (result) return result
+    }
+  }
+
+  return null
+}
+
+export function buildSaferWaypoint(source, destination, potholes) {
+  const [lat1, lon1] = source
+  const [lat2, lon2] = destination
+
+  const midLat = (lat1 + lat2) / 2
+  const midLon = (lon1 + lon2) / 2
+
+  const dLat = lat2 - lat1
+  const dLon = lon2 - lon1
+
+  const distance = Math.sqrt(dLat * dLat + dLon * dLon)
+  if (distance === 0) return [midLat, midLon]
+
+  // Test detours to the left and right at varying distances proportional to the route length.
+  const candidates = []
+  const scales = [0.15, -0.15, 0.3, -0.3] 
+  
+  for (const scale of scales) {
+    const offsetLat = (-dLon) * scale
+    const offsetLon = (dLat) * scale
+    candidates.push([midLat + offsetLat, midLon + offsetLon])
+  }
+
+  // Find the waypoint that is furthest from the dense pothole clusters
+  let bestWaypoint = candidates[0]
+  let lowestPenalty = Infinity
+
+  for (const waypoint of candidates) {
+    let penalty = 0
+    for (const pothole of potholes) {
+      const dist = getDistanceMeters(waypoint, [pothole.latitude, pothole.longitude])
+      if (dist < 4000) { // Penalize if it's within 4km of a pothole
+        const weight = pothole.severity === 'severe' ? 5000 : pothole.severity === 'medium' ? 2000 : 500
+        penalty += weight / (dist + 1)
+      }
+    }
+    
+    if (penalty < lowestPenalty) {
+      lowestPenalty = penalty
+      bestWaypoint = waypoint
+    }
+  }
+
+  return bestWaypoint
 }
 
 export function analyzeRoute(routeCoordinates, potholes) {

@@ -34,3 +34,36 @@ export const saferRouteBiasPoints = [
   [12.9639, 77.6158],
   [12.9586, 77.5879],
 ]
+
+export function generateDynamicPotholesForArea(source, destination) {
+  const [lat1, lon1] = source
+  const [lat2, lon2] = destination
+
+  const midLat = (lat1 + lat2) / 2
+  const midLon = (lon1 + lon2) / 2
+  
+  // Calculate distance roughly
+  const dLat = Math.abs(lat2 - lat1)
+  const dLon = Math.abs(lon2 - lon1)
+  const spread = Math.max(dLat, dLon, 0.02) * 0.8 // Spread them around the bounding box
+
+  const severities = ['severe', 'medium', 'low', 'severe', 'medium']
+  
+  const dynamicPotholes = []
+  for (let i = 0; i < 8; i++) {
+    // Random offset between -spread/2 and +spread/2
+    const latOffset = (Math.random() - 0.5) * spread
+    const lonOffset = (Math.random() - 0.5) * spread
+    
+    dynamicPotholes.push({
+      id: `PH-DYN-${Date.now()}-${i}`,
+      latitude: midLat + latOffset,
+      longitude: midLon + lonOffset,
+      severity: severities[i % severities.length],
+      road: 'Unnamed Road (Mock)',
+    })
+  }
+
+  // Combine static Bengaluru potholes with the dynamic ones
+  return [...dummyPotholes, ...dynamicPotholes]
+}

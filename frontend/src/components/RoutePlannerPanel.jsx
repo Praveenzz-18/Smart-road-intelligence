@@ -8,6 +8,7 @@ function RoutePlannerPanel({
   onDestinationChange,
   onSearch,
   error,
+  isLoading,
 }) {
   return (
     <form className="grid gap-4 lg:grid-cols-[1fr_1fr_auto]" onSubmit={onSearch}>
@@ -40,11 +41,16 @@ function RoutePlannerPanel({
       </label>
 
       <button
-        className="mt-6 inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-teal-300 px-5 text-sm font-black text-slate-950 transition hover:bg-teal-200"
+        className="mt-6 inline-flex h-12 items-center justify-center gap-2 rounded-lg bg-teal-300 px-5 text-sm font-black text-slate-950 transition hover:bg-teal-200 disabled:opacity-75 disabled:cursor-wait"
         type="submit"
+        disabled={isLoading}
       >
-        <Search className="h-4 w-4" />
-        Search
+        {isLoading ? (
+          <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-950 border-t-transparent" />
+        ) : (
+          <Search className="h-4 w-4" />
+        )}
+        {isLoading ? 'Searching...' : 'Search'}
       </button>
 
       <datalist id="safe-route-locations">

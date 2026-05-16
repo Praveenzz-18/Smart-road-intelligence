@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routes import events
+from routes import events, route_logs
 import os
 from dotenv import load_dotenv
 
@@ -24,6 +24,7 @@ app.add_middleware(
 
 # Include routes
 app.include_router(events.router, prefix="/api/v1")
+app.include_router(route_logs.router, prefix="/api/v1/routes")
 
 @app.get("/")
 async def root():

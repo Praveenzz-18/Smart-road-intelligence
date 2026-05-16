@@ -42,6 +42,10 @@ class SupabaseService:
         response = self.client.table("events").update({"image_url": image_url}).eq("id", event_id).execute()
         return response.data[0] if response.data else None
 
+    def insert_route_log(self, route_data: dict):
+        response = self.client.table("route_logs").insert(route_data).execute()
+        return response.data[0] if response.data else None
+
 # Dependency to get service instance
 def get_supabase_service():
     return SupabaseService()

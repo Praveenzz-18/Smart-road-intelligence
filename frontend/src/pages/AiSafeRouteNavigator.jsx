@@ -4,11 +4,12 @@ import RouteAlertCard from '../components/RouteAlertCard'
 import RoutePlannerPanel from '../components/RoutePlannerPanel'
 import SafeRouteMap from '../components/SafeRouteMap'
 import SafetyScorePanel from '../components/SafetyScorePanel'
-import { dummyPotholes } from '../services/mockRouteData'
+import { dummyPotholes, generateDynamicPotholesForArea } from '../services/mockRouteData'
 import {
   analyzeRoute,
   buildSaferWaypoint,
   resolveLocation,
+  resolveLocationSync,
 } from '../services/routeSafetyService'
 
 const defaultSource = 'MG Road Junction'
@@ -17,41 +18,54 @@ const defaultDestination = 'Indiranagar Metro'
 function AiSafeRouteNavigator() {
   const [source, setSource] = useState(defaultSource)
   const [destination, setDestination] = useState(defaultDestination)
-  const [sourceLocation, setSourceLocation] = useState(() => resolveLocation(defaultSource))
-  const [destinationLocation, setDestinationLocation] = useState(() => resolveLocation(defaultDestination))
+  const [sourceLocation, setSourceLocation] = useState(() => resolveLocationSync(defaultSource))
+  const [destinationLocation, setDestinationLocation] = useState(() => resolveLocationSync(defaultDestination))
   const [routeCoordinates, setRouteCoordinates] = useState([])
   const [saferRouteCoordinates, setSaferRouteCoordinates] = useState([])
   const [error, setError] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [isLogging, setIsLogging] = useState(false)
+  const [logSuccess, setLogSuccess] = useState(false)
+
+  const [activePotholes, setActivePotholes] = useState(dummyPotholes)
 
   const analysis = useMemo(
-    () => analyzeRoute(routeCoordinates, dummyPotholes),
-    [routeCoordinates],
+    () => analyzeRoute(routeCoordinates, activePotholes),
+    [routeCoordinates, activePotholes],
   )
   const saferAnalysis = useMemo(
-    () => analyzeRoute(saferRouteCoordinates, dummyPotholes),
-    [saferRouteCoordinates],
+    () => analyzeRoute(saferRouteCoordinates, activePotholes),
+    [saferRouteCoordinates, activePotholes],
   )
   const saferWaypoint = useMemo(() => {
     if (!sourceLocation || !destinationLocation) return null
-    return buildSaferWaypoint(sourceLocation.coordinates, destinationLocation.coordinates)
-  }, [destinationLocation, sourceLocation])
+    return buildSaferWaypoint(sourceLocation.coordinates, destinationLocation.coordinates, activePotholes)
+  }, [destinationLocation, sourceLocation, activePotholes])
 
-  const handleSearch = (event) => {
+  const handleSearch = async (event) => {
     event.preventDefault()
 
-    const nextSource = resolveLocation(source)
-    const nextDestination = resolveLocation(destination)
+    setIsLoading(true)
+    setError('')
+
+    const nextSource = await resolveLocation(source)
+    const nextDestination = await resolveLocation(destination)
 
     if (!nextSource || !nextDestination) {
-      setError('Choose one of the suggested Bengaluru locations, or enter coordinates as latitude, longitude.')
+      setError('Could not find one or both locations. Try entering coordinates or a more specific address.')
+      setIsLoading(false)
       return
     }
 
-    setError('')
+    const localPotholes = generateDynamicPotholesForArea(nextSource.coordinates, nextDestination.coordinates)
+
     setRouteCoordinates([])
     setSaferRouteCoordinates([])
     setSourceLocation(nextSource)
     setDestinationLocation(nextDestination)
+    setActivePotholes(localPotholes)
+    setLogSuccess(false)
+    setIsLoading(false)
   }
 
   const handlePrimaryRouteFound = useCallback((coordinates) => {
@@ -63,6 +77,33 @@ function AiSafeRouteNavigator() {
   }, [])
 
   const showSaferRoute = analysis.saferRouteRecommended
+
+  const handleLogRoute = async () => {
+    setIsLogging(true)
+    const payload = {
+      source_lat: sourceLocation.coordinates[0],
+      source_lon: sourceLocation.coordinates[1],
+      dest_lat: destinationLocation.coordinates[0],
+      dest_lon: destinationLocation.coordinates[1],
+      source_name: sourceLocation.name,
+      dest_name: destinationLocation.name,
+      safety_score: showSaferRoute ? saferAnalysis.roadHealthScore : analysis.roadHealthScore,
+      potholes_avoided: Math.max(0, analysis.potholeCount - (showSaferRoute ? saferAnalysis.potholeCount : analysis.potholeCount)),
+      is_safer_route_chosen: showSaferRoute,
+    }
+    
+    try {
+      const res = await fetch('http://localhost:8000/api/v1/routes/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      if (res.ok) setLogSuccess(true)
+    } catch(e) {
+      console.error(e)
+    }
+    setIsLogging(false)
+  }
 
   return (
     <section className="glass-panel mt-5 overflow-hidden rounded-lg" id="safe-routes">
@@ -85,6 +126,7 @@ function AiSafeRouteNavigator() {
           <RoutePlannerPanel
             destination={destination}
             error={error}
+            isLoading={isLoading}
             onDestinationChange={setDestination}
             onSearch={handleSearch}
             onSourceChange={setSource}
@@ -98,7 +140,7 @@ function AiSafeRouteNavigator() {
           destinationLocation={destinationLocation}
           onPrimaryRouteFound={handlePrimaryRouteFound}
           onSaferRouteFound={handleSaferRouteFound}
-          potholes={dummyPotholes}
+          potholes={activePotholes}
           saferWaypoint={saferWaypoint}
           showSaferRoute={showSaferRoute}
           sourceLocation={sourceLocation}
@@ -146,6 +188,14 @@ function AiSafeRouteNavigator() {
               )}
             </div>
           </div>
+
+          <button
+            onClick={handleLogRoute}
+            disabled={isLogging || logSuccess || !routeCoordinates.length}
+            className="mt-2 w-full rounded-lg border border-teal-500/30 bg-teal-500/10 py-3 text-sm font-bold text-teal-300 transition hover:bg-teal-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {logSuccess ? '✓ Saved to Database' : isLogging ? 'Saving...' : 'Save Trip to Database'}
+          </button>
         </aside>
       </div>
     </section>

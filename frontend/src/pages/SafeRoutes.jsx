@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import axios from 'axios'
+import { resolveLocation } from '../services/routeSafetyService'
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet'
 import { AlertTriangle, ShieldCheck, Activity, Car, CheckCircle2, Clock, Navigation } from 'lucide-react'
 import L from 'leaflet'
@@ -18,25 +19,29 @@ export default function SafeRoutes() {
   
   const [isLoading, setIsLoading] = useState(false)
   const [routeData, setRouteData] = useState(null)
+  
+  const [isLogging, setIsLogging] = useState(false)
+  const [logSuccess, setLogSuccess] = useState(false)
 
   const handleSearch = async (e) => {
     e.preventDefault()
     if (!source || !destination) return
     setIsLoading(true)
+    setLogSuccess(false)
 
     try {
-      // 1. Geocode Source and Destination via OpenStreetMap Nominatim
-      const srcRes = await axios.get(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(source)}&format=json&limit=1`)
-      const destRes = await axios.get(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(destination)}&format=json&limit=1`)
+      // 1. Geocode Source and Destination via our service (supports coords & Nominatim)
+      const srcLoc = await resolveLocation(source)
+      const destLoc = await resolveLocation(destination)
 
-      if (srcRes.data.length === 0 || destRes.data.length === 0) {
-        alert("Could not find coordinates. Try adding city name (e.g., 'MG Road, Bangalore').")
+      if (!srcLoc || !destLoc) {
+        alert("Could not find coordinates. Try simplifying the address (e.g. 'Bogadi 2nd Stage, Mysuru') or paste GPS coordinates directly (e.g. '12.30, 76.64').")
         setIsLoading(false)
         return
       }
 
-      const srcCoords = [parseFloat(srcRes.data[0].lat), parseFloat(srcRes.data[0].lon)]
-      const destCoords = [parseFloat(destRes.data[0].lat), parseFloat(destRes.data[0].lon)]
+      const srcCoords = srcLoc.coordinates
+      const destCoords = destLoc.coordinates
 
       // 2. Get Route via OSRM
       const osrmRes = await axios.get(`https://router.project-osrm.org/route/v1/driving/${srcCoords[1]},${srcCoords[0]};${destCoords[1]},${destCoords[0]}?overview=full&geometries=geojson`)
@@ -63,8 +68,8 @@ export default function SafeRoutes() {
         destCoords,
         routeCoords,
         bounds: [srcCoords, destCoords],
-        srcName: srcRes.data[0].display_name.split(',')[0],
-        destName: destRes.data[0].display_name.split(',')[0],
+        srcName: srcLoc.name.split(',')[0],
+        destName: destLoc.name.split(',')[0],
         distance: (osrmRes.data.routes[0].distance / 1000).toFixed(1), // km
         duration: Math.ceil(osrmRes.data.routes[0].duration / 60), // mins
         score: mockScore,
@@ -79,6 +84,35 @@ export default function SafeRoutes() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const handleLogRoute = async () => {
+    if (!routeData) return
+    setIsLogging(true)
+    const payload = {
+      source_lat: routeData.srcCoords[0],
+      source_lon: routeData.srcCoords[1],
+      dest_lat: routeData.destCoords[0],
+      dest_lon: routeData.destCoords[1],
+      source_name: routeData.srcName,
+      dest_name: routeData.destName,
+      safety_score: routeData.score,
+      potholes_avoided: routeData.potholes.length,
+      is_safer_route_chosen: true,
+      distance_km: parseFloat(routeData.distance)
+    }
+    
+    try {
+      const res = await fetch('http://localhost:8000/api/v1/routes/log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      })
+      if (res.ok) setLogSuccess(true)
+    } catch(e) {
+      console.error(e)
+    }
+    setIsLogging(false)
   }
 
   const startIcon = L.divIcon({ className: '', html: '<div class="h-5 w-5 bg-teal-400 rounded-full border-[3px] border-white shadow-lg shadow-teal-500/50"></div>', iconSize: [20, 20] })
@@ -254,6 +288,14 @@ export default function SafeRoutes() {
               <p className="text-sm text-slate-500 text-center py-10">Awaiting search...</p>
             )}
           </div>
+          
+          <button
+            onClick={handleLogRoute}
+            disabled={isLogging || logSuccess || !routeData}
+            className="w-full rounded-xl border border-teal-500/30 bg-teal-500/10 py-4 text-sm font-bold text-teal-300 transition hover:bg-teal-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {logSuccess ? '✓ Saved to Trip Logs Database' : isLogging ? 'Saving...' : 'Save Trip to Database'}
+          </button>
         </div>
       </div>
     </div>
