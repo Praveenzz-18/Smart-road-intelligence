@@ -89,7 +89,7 @@ async def get_nearby_events(
     lon: float = Query(..., description="User longitude")
 ):
     # Simulated dummy data for Live GPS Map monitoring
-    # Generates anomalies around the user's current location
+    # Generates anomalies around the user's current location (both close-by and scattered around the city)
     import random
     from datetime import datetime
     
@@ -97,13 +97,25 @@ async def get_nearby_events(
     severities = ["high", "medium", "low"]
     types = ["pothole", "crash", "speed_breaker"]
     
+    # 1. Generate 5 very close anomalies (within ~150 meters) for proximity and voice warning testing
     for i in range(5):
-        # random offset up to ~0.005 degrees (roughly 500 meters)
-        lat_offset = random.uniform(-0.005, 0.005)
-        lon_offset = random.uniform(-0.005, 0.005)
-        
+        lat_offset = random.uniform(-0.001, 0.001)
+        lon_offset = random.uniform(-0.001, 0.001)
         anomalies.append({
-            "id": str(uuid.uuid4()),
+            "id": f"near-{i}-{random.randint(1000, 9999)}",
+            "event_type": random.choice(types),
+            "latitude": lat + lat_offset,
+            "longitude": lon + lon_offset,
+            "timestamp": datetime.utcnow().isoformat(),
+            "severity": random.choice(severities)
+        })
+
+    # 2. Generate 15 scattered anomalies around the city (up to 3-4 km radius)
+    for i in range(15):
+        lat_offset = random.uniform(-0.03, 0.03)
+        lon_offset = random.uniform(-0.03, 0.03)
+        anomalies.append({
+            "id": f"far-{i}-{random.randint(1000, 9999)}",
             "event_type": random.choice(types),
             "latitude": lat + lat_offset,
             "longitude": lon + lon_offset,

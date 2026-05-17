@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { BellRing, ShieldAlert, Navigation } from 'lucide-react';
+import { BellRing, ShieldAlert, Navigation, Volume2, VolumeX, Wifi, WifiOff } from 'lucide-react';
 import axios from 'axios';
 
 // Map component to handle dynamic centering and smooth updates
@@ -18,6 +18,7 @@ function MapController({ position }) {
   return null;
 }
 
+// Custom markers for Leaflet mapping
 const userIcon = new L.Icon({
   iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
@@ -63,12 +64,59 @@ const getSeverityIcon = (severity) => {
   }
 };
 
+// Haversine formula to calculate accurate distance in meters between two lat/lon points
+const getDistance = (lat1, lon1, lat2, lon2) => {
+  const R = 6371e3; // Earth radius in meters
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c; // distance in meters
+};
+
 export default function LiveGPSMap() {
   const [userLocation, setUserLocation] = useState(null);
   const [anomalies, setAnomalies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [alert, setAlert] = useState(false);
+  const [activeAlert, setActiveAlert] = useState(null);
+  
+  // Custom interactive settings
+  const [audioEnabled, setAudioEnabled] = useState(true);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  // Track already spoken anomalies to avoid spamming the user
+  const spokenAnomaliesRef = useRef(new Set());
+
+  // Speech helper
+  const speakAlert = (text) => {
+    if (!audioEnabled || !('speechSynthesis' in window)) return;
+    
+    // Stop ongoing speech immediately for timely alerts
+    window.speechSynthesis.cancel();
+    
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    window.speechSynthesis.speak(utterance);
+  };
+
+  // Monitor network connection status
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   useEffect(() => {
     if (!navigator.geolocation) {
@@ -78,25 +126,59 @@ export default function LiveGPSMap() {
     }
 
     const fetchAnomalies = async (lat, lon) => {
-      try {
-        const response = await axios.get(`http://localhost:8000/api/v1/events/nearby-events?lat=${lat}&lon=${lon}`);
-        setAnomalies(response.data);
-
-        // Check if any anomaly is very close (e.g., within ~50 meters approx 0.0005 degrees)
-        const closeAnomalies = response.data.filter(a => {
-          const distLat = Math.abs(a.latitude - lat);
-          const distLon = Math.abs(a.longitude - lon);
-          return distLat < 0.0005 && distLon < 0.0005;
-        });
-
-        if (closeAnomalies.length > 0) {
-          setAlert(true);
-          // Optional: play a warning sound here
-          setTimeout(() => setAlert(false), 5000);
+      let data = [];
+      if (navigator.onLine) {
+        try {
+          const response = await axios.get(`http://localhost:8000/api/v1/events/nearby-events?lat=${lat}&lon=${lon}`);
+          data = response.data;
+          setAnomalies(data);
+          // Cache to local storage for offline use
+          localStorage.setItem('cached_anomalies', JSON.stringify(data));
+        } catch (err) {
+          console.error("Failed to fetch nearby anomalies from server. Trying offline cache...", err);
+          const cached = localStorage.getItem('cached_anomalies');
+          if (cached) {
+            data = JSON.parse(cached);
+            setAnomalies(data);
+          }
         }
-      } catch (err) {
-        console.error("Failed to fetch nearby anomalies", err);
+      } else {
+        // Retrieve offline data from cache
+        const cached = localStorage.getItem('cached_anomalies');
+        if (cached) {
+          data = JSON.parse(cached);
+          setAnomalies(data);
+        }
       }
+
+      // Proximity & Warning Audio Logic using Haversine
+      let triggeredAlert = null;
+      data.forEach(anomaly => {
+        const distance = getDistance(lat, lon, anomaly.latitude, anomaly.longitude);
+
+        // Alert triggered if anomaly is within 50 meters
+        if (distance <= 50) {
+          const formattedType = anomaly.event_type.replace('_', ' ');
+          triggeredAlert = {
+            ...anomaly,
+            distance: Math.round(distance),
+            message: `⚠ ${anomaly.severity.toUpperCase()} severity ${formattedType} detected ${Math.round(distance)} meters ahead!`
+          };
+
+          // Check if we already spoke about this specific anomaly
+          if (!spokenAnomaliesRef.current.has(anomaly.id)) {
+            spokenAnomaliesRef.current.add(anomaly.id);
+            speakAlert(`Warning! ${anomaly.severity} severity ${formattedType} detected ${Math.round(distance)} meters ahead. Please slow down.`);
+            
+            // Clean up spoken ID cache after 60 seconds so it can be re-spoken if user cycles back
+            setTimeout(() => {
+              spokenAnomaliesRef.current.delete(anomaly.id);
+            }, 60000);
+          }
+        }
+      });
+
+      setActiveAlert(triggeredAlert);
     };
 
     const watchId = navigator.geolocation.watchPosition(
@@ -117,25 +199,77 @@ export default function LiveGPSMap() {
       }
     );
 
-    return () => navigator.geolocation.clearWatch(watchId);
-  }, []);
+    return () => {
+      navigator.geolocation.clearWatch(watchId);
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, [audioEnabled]);
+
+  // Audio testing helper
+  const handleTestAlert = () => {
+    speakAlert("Audio check. Urban Guard smart navigation voice alerts are fully active.");
+  };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      {/* Header with Control Panel */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-black tracking-tight text-white">Live GPS Monitoring</h1>
-          <p className="text-slate-400">Real-time smart city road health tracking</p>
+          <h1 className="text-3xl font-black tracking-tight text-white flex items-center gap-2">
+            Live GPS Monitoring
+            {isOnline ? (
+              <Wifi className="h-5 w-5 text-emerald-400" />
+            ) : (
+              <WifiOff className="h-5 w-5 text-amber-500 animate-pulse" />
+            )}
+          </h1>
+          <p className="text-slate-400">Real-time smart city road health & audio safety navigation</p>
+        </div>
+
+        {/* Audio controls */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setAudioEnabled(!audioEnabled)}
+            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold transition ${
+              audioEnabled 
+                ? 'bg-teal-500/10 text-teal-300 hover:bg-teal-500/20 border border-teal-500/30' 
+                : 'bg-slate-800 text-slate-400 hover:bg-slate-700 border border-slate-700'
+            }`}
+          >
+            {audioEnabled ? (
+              <>
+                <Volume2 className="h-4 w-4" /> Voice Alerts: ON
+              </>
+            ) : (
+              <>
+                <VolumeX className="h-4 w-4" /> Voice Alerts: OFF
+              </>
+            )}
+          </button>
+          
+          <button
+            onClick={handleTestAlert}
+            className="rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 px-4 py-2 text-sm font-bold text-slate-300 transition"
+          >
+            Test Voice
+          </button>
         </div>
       </div>
 
-      {alert && (
-        <div className="flex items-center gap-3 rounded-lg border border-red-500/50 bg-red-500/10 p-4 text-red-200 shadow-[0_0_15px_rgba(239,68,68,0.2)]">
-          <ShieldAlert className="h-6 w-6 text-red-400 animate-pulse" />
-          <span className="font-bold">⚠ Road anomaly detected nearby! Please slow down.</span>
+      {/* Dynamic Proximity Alerts */}
+      {activeAlert && (
+        <div className="flex items-center gap-3 rounded-lg border border-red-500/50 bg-red-500/10 p-4 text-red-200 shadow-[0_0_15px_rgba(239,68,68,0.25)] animate-bounce">
+          <ShieldAlert className="h-6 w-6 text-red-400 animate-pulse shrink-0" />
+          <div>
+            <span className="font-black text-white">PROXIMITY WARNING:</span>{' '}
+            <span className="font-semibold text-red-100">{activeAlert.message}</span>
+          </div>
         </div>
       )}
 
+      {/* Main Map Frame */}
       <div className="relative h-[600px] w-full overflow-hidden rounded-xl border border-slate-800 bg-slate-900/50 shadow-xl">
         {loading && (
           <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-900/80 backdrop-blur-sm">
@@ -158,7 +292,7 @@ export default function LiveGPSMap() {
             className="z-0"
           >
             <TileLayer
-              url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+              url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
             />
             <MapController position={userLocation} />
@@ -171,15 +305,15 @@ export default function LiveGPSMap() {
             </Marker>
 
             {/* Anomalies */}
-            {anomalies.map((anomaly, idx) => (
+            {anomalies.map((anomaly) => (
               <Marker
-                key={idx}
+                key={anomaly.id}
                 position={[anomaly.latitude, anomaly.longitude]}
                 icon={getSeverityIcon(anomaly.severity)}
               >
                 <Popup>
                   <div className="flex flex-col gap-1">
-                    <span className="font-bold capitalize text-slate-900">{anomaly.event_type}</span>
+                    <span className="font-bold capitalize text-slate-900">{anomaly.event_type.replace('_', ' ')}</span>
                     <span className="text-sm text-slate-600 capitalize">Severity: {anomaly.severity}</span>
                   </div>
                 </Popup>
@@ -190,12 +324,19 @@ export default function LiveGPSMap() {
 
         {/* Floating status badge */}
         {!loading && !error && (
-          <div className="absolute bottom-6 right-6 z-[400] flex items-center gap-2 rounded-full bg-slate-900/90 px-4 py-2 text-sm font-medium text-slate-300 shadow-lg border border-slate-700">
-            <span className="relative flex h-3 w-3">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-teal-400 opacity-75"></span>
-              <span className="relative inline-flex h-3 w-3 rounded-full bg-teal-500"></span>
-            </span>
-            Live Tracking Active
+          <div className="absolute bottom-6 right-6 z-[400] flex flex-col gap-2">
+            {!isOnline && (
+              <div className="flex items-center gap-2 rounded-full bg-amber-500/90 px-4 py-2 text-sm font-semibold text-slate-950 shadow-lg border border-amber-600">
+                Offline Mode (Using Cached Data)
+              </div>
+            )}
+            <div className="flex items-center gap-2 rounded-full bg-slate-900/90 px-4 py-2 text-sm font-medium text-slate-300 shadow-lg border border-slate-700">
+              <span className="relative flex h-3 w-3">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-teal-400 opacity-75"></span>
+                <span className="relative inline-flex h-3 w-3 rounded-full bg-teal-500"></span>
+              </span>
+              Live GPS Tracking Active
+            </div>
           </div>
         )}
       </div>
