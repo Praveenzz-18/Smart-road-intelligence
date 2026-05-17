@@ -2,6 +2,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import LandingPage from './pages/LandingPage'
 import Dashboard from './pages/Dashboard'
 import SafeRoutes from './pages/SafeRoutes'
+import LiveGPSMap from './pages/LiveGPSMap'
 import DashboardLayout from './layouts/DashboardLayout'
 import './App.css'
 
@@ -16,7 +17,7 @@ function App() {
           <Route path="/routes" element={<SafeRoutes />} />
           
           {/* Placeholders for future pages */}
-          <Route path="/map" element={<div className="p-8 text-white">Live Map (Coming Soon)</div>} />
+          <Route path="/map" element={<LiveGPSMap />} />
           <Route path="/events" element={<div className="p-8 text-white">Events (Coming Soon)</div>} />
           <Route path="/analytics" element={<div className="p-8 text-white">Analytics (Coming Soon)</div>} />
           <Route path="/predictions" element={<div className="p-8 text-white">Predictions (Coming Soon)</div>} />

@@ -10,8 +10,19 @@ function LandingPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-200">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+    <main 
+      className="min-h-screen text-slate-200 relative"
+      style={{
+        backgroundImage: "url('/bg-road.jpg')",
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        backgroundAttachment: "fixed"
+      }}
+    >
+      {/* Dark overlay for text readability */}
+      <div className="absolute inset-0 bg-slate-950/75 z-0 pointer-events-none"></div>
+
+      <div className="relative z-10 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Navigation */}
         <nav className="flex items-center justify-between py-6">
           <div className="flex items-center gap-3">

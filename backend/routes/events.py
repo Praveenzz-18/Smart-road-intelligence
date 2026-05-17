@@ -82,3 +82,33 @@ async def get_events(
         return events
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/nearby-events")
+async def get_nearby_events(
+    lat: float = Query(..., description="User latitude"),
+    lon: float = Query(..., description="User longitude")
+):
+    # Simulated dummy data for Live GPS Map monitoring
+    # Generates anomalies around the user's current location
+    import random
+    from datetime import datetime
+    
+    anomalies = []
+    severities = ["high", "medium", "low"]
+    types = ["pothole", "crash", "speed_breaker"]
+    
+    for i in range(5):
+        # random offset up to ~0.005 degrees (roughly 500 meters)
+        lat_offset = random.uniform(-0.005, 0.005)
+        lon_offset = random.uniform(-0.005, 0.005)
+        
+        anomalies.append({
+            "id": str(uuid.uuid4()),
+            "event_type": random.choice(types),
+            "latitude": lat + lat_offset,
+            "longitude": lon + lon_offset,
+            "timestamp": datetime.utcnow().isoformat(),
+            "severity": random.choice(severities)
+        })
+        
+    return anomalies
