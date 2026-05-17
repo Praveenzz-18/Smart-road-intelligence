@@ -77,6 +77,43 @@ const getDistance = (lat1, lon1, lat2, lon2) => {
   return R * c; // distance in meters
 };
 
+// Local client-side mock data generator as a robust fallback if backend is down
+const generateFrontendMockAnomalies = (lat, lon) => {
+  const anomalies = [];
+  const severities = ["high", "medium", "low"];
+  const types = ["pothole", "crash", "speed_breaker"];
+  
+  // 1. Generate 5 very close anomalies (within ~150 meters) for proximity and voice warning testing
+  for (let i = 0; i < 5; i++) {
+    const latOffset = (Math.random() - 0.5) * 0.002;
+    const lonOffset = (Math.random() - 0.5) * 0.002;
+    anomalies.push({
+      id: `client-near-${i}-${Math.floor(Math.random() * 9000) + 1000}`,
+      event_type: types[Math.floor(Math.random() * types.length)],
+      latitude: lat + latOffset,
+      longitude: lon + lonOffset,
+      timestamp: new Date().toISOString(),
+      severity: severities[Math.floor(Math.random() * severities.length)]
+    });
+  }
+
+  // 2. Generate 15 scattered anomalies around the city (up to 3-4 km radius)
+  for (let i = 0; i < 15; i++) {
+    const latOffset = (Math.random() - 0.5) * 0.06;
+    const lonOffset = (Math.random() - 0.5) * 0.06;
+    anomalies.push({
+      id: `client-far-${i}-${Math.floor(Math.random() * 9000) + 1000}`,
+      event_type: types[Math.floor(Math.random() * types.length)],
+      latitude: lat + latOffset,
+      longitude: lon + lonOffset,
+      timestamp: new Date().toISOString(),
+      severity: severities[Math.floor(Math.random() * severities.length)]
+    });
+  }
+  
+  return anomalies;
+};
+
 export default function LiveGPSMap() {
   const [userLocation, setUserLocation] = useState(null);
   const [anomalies, setAnomalies] = useState([]);
@@ -135,20 +172,24 @@ export default function LiveGPSMap() {
           // Cache to local storage for offline use
           localStorage.setItem('cached_anomalies', JSON.stringify(data));
         } catch (err) {
-          console.error("Failed to fetch nearby anomalies from server. Trying offline cache...", err);
+          console.error("Failed to fetch nearby anomalies from server. Using local fallback mock data...", err);
           const cached = localStorage.getItem('cached_anomalies');
           if (cached) {
             data = JSON.parse(cached);
-            setAnomalies(data);
+          } else {
+            data = generateFrontendMockAnomalies(lat, lon);
           }
+          setAnomalies(data);
         }
       } else {
         // Retrieve offline data from cache
         const cached = localStorage.getItem('cached_anomalies');
         if (cached) {
           data = JSON.parse(cached);
-          setAnomalies(data);
+        } else {
+          data = generateFrontendMockAnomalies(lat, lon);
         }
+        setAnomalies(data);
       }
 
       // Proximity & Warning Audio Logic using Haversine
